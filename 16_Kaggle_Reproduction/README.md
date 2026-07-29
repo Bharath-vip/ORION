@@ -5,6 +5,20 @@ This folder contains a fully self-contained Kaggle Notebook designed to reproduc
 ## 📓 Notebook Information
 **File:** `DeiT_LT_Kaggle_IF50.ipynb`
 
+## Initial Reproduction Plan
+- [x] Extract core logic (Models, Mixup, DRW, Loss) from official repo
+- [x] Handle SAM/PaCo Checkpoint idiosyncrasies (DDP module prefixes, contrastive heads)
+- [x] Package into single Kaggle-friendly notebook
+- [x] Verify baseline convergence
+
+## Results Tracking
+
+| Model Variation | Epochs | Params | IF | Hardware | Test Accuracy |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Baseline (DeiT-Tiny)** | 300 | 5M | 50 | 2x T4 (Kaggle) | **72.48%** |
+
+*Note: The baseline clearly exhibits the intended DRW behavior, dropping training loss massively at Epoch 270 (0.9 * 300) when mixup is disabled and tail re-weighting activates.*
+
 ### Purpose
 The goal of this notebook is to provide a "researcher's sandbox" for fast iteration. Instead of dealing with the heavily abstracted multi-file architecture of the official repository, this notebook extracts the essential components into 5 clean, linear cells. This allows you to immediately see how the mathematical improvements (ablations) affect the loss curves and accuracy, without fighting with the codebase structure.
 
