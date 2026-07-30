@@ -25,3 +25,28 @@ Before attempting to learn a parametric curve (e.g., a 3-parameter spline), we m
 5. Plot $\alpha^*$ against the class sample count.
 
 If the plot shows a monotonic trend (tail classes prefer lower $\alpha$, head classes prefer higher $\alpha$), ATF is mathematically validated and constitutes a highly publishable, zero-training-cost improvement over DeiT-LT.
+
+## Successful Validation (July 2026)
+The Oracle experiment was successfully run on Kaggle using a fully trained DeiT-Tiny on CIFAR-10 LT (IF=50). The results perfectly validated the ATF hypothesis:
+
+| Class | Count | Group | Best Oracle $\alpha^*$ |
+| :--- | :--- | :--- | :--- |
+| 0 | 5000 | Head | 0.80 |
+| 1 | 3237 | Head | 1.00 |
+| 2 | 2096 | Head | 1.00 |
+| 3 | 1357 | Head | 1.00 |
+| 4 | 878 | Med | 0.05 |
+| 5 | 568 | Med | 0.05 |
+| 6 | 368 | Med | 0.00 |
+| 7 | 238 | Tail | 0.05 |
+| 8 | 154 | Tail | 0.00 |
+| 9 | 100 | Tail | 0.00 |
+
+**Conclusion:** The optimal fusion weight follows an almost perfect step-function correlated with class frequency. Head classes demand $\alpha \approx 1.0$ (relying exclusively on CLS), while Medium and Tail classes demand $\alpha \approx 0.0$ (relying exclusively on DIST). 
+
+Even with a flat $\alpha \approx 0.26$ bias learned by the initial Scipy optimizer, the model achieved a **+1.18% absolute accuracy improvement** (73.22% $\to$ 74.40%) at zero extra training cost.
+
+## Next Steps (Scipy Optimizer Fix)
+During the first ATF experiment, the Scipy optimizer learned a flat curve (`w1=0.0`, `w2=0.0`, `b=-1.0`). This occurred because the L2 regularization penalty (`0.1 * (w1**2 + w2**2)`) was excessively large compared to the CrossEntropy loss, forcing the weights to zero. 
+
+**Action Item:** In the next iteration, remove or drastically reduce the L2 regularization penalty in the `atf_loss` function to allow the optimizer to learn the true diagonal curve demonstrated by the Oracle plot. This should unlock the full theoretical limit of the ATF boost.
