@@ -121,7 +121,7 @@ print(f"Total instances in the 'Oracle Gap': {gap_mask.sum().item()} / {len(all_
 # Construct Feature Matrix (X) and Target Oracle Alphas (Y) for the Decision Tree
 # We want the tree to predict the Oracle's chosen alpha purely from Confidence and Entropy!
 X = torch.stack([conf_cls, conf_dist, ent_cls, ent_dist], dim=1).numpy()
-Y = np.array([oracle_alphas[t.item()] for t in all_targets]) # Discretized targets
+Y = np.array([str(oracle_alphas[t.item()]) for t in all_targets]) # Cast to string for Classification
 
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
 
