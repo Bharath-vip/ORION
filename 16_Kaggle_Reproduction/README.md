@@ -15,7 +15,7 @@ This folder contains a fully self-contained Kaggle Notebook designed to reproduc
 
 | Model Variation | Epochs | Params | IF | Hardware | Test Accuracy |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (DeiT-Tiny)** | 300 | 5M | 50 | 2x T4 (Kaggle) | **72.20%** |
+| **Baseline (DeiT-Tiny)** | 300 | 5M | 50 | 2x T4 (Kaggle) | **73.10%** |
 
 *Note: The baseline clearly exhibits the intended DRW behavior, dropping training loss massively at Epoch 280 when mixup is disabled and tail re-weighting activates.*
 
@@ -25,15 +25,20 @@ The tracking loop extracted the precise per-class accuracy of both the **CLS Tok
 | Class | Count | Group | CLS Acc | DIST Acc | Delta |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 0 | 5000 | Head | **93.2%** | 89.3% | CLS +3.9% |
-| 1 | 3237 | Head | **95.9%** | 92.7% | CLS +3.2% |
-| 2 | 2096 | Head | **76.9%** | 72.4% | CLS +4.5% |
-| 3 | 1357 | Head | **69.0%** | 60.2% | CLS +8.8% |
-| 4 | 878 | Med | **69.1%** | 68.8% | CLS +0.3% |
-| 5 | 568 | Med | 53.2% | **64.3%** | DIST +11.1% |
-| 6 | 368 | Med | 67.8% | **72.4%** | DIST +4.6% |
-| 7 | 238 | Tail | 59.6% | **68.2%** | DIST +8.6% |
-| 8 | 154 | Tail | 53.5% | **76.3%** | DIST +22.8% |
-| 9 | 100 | Tail | 47.3% | **72.2%** | DIST +24.9% |
+| 1 | 3237 | Head | **94.8%** | 92.9% | CLS +1.9% |
+| 2 | 2096 | Head | **77.5%** | 74.8% | CLS +2.7% |
+| 3 | 1357 | Head | **68.1%** | 61.7% | CLS +6.4% |
+| 4 | 878 | Med | 67.2% | **68.5%** | DIST +1.3% |
+| 5 | 568 | Med | 59.3% | **66.9%** | DIST +7.6% |
+| 6 | 368 | Med | 73.1% | **77.2%** | DIST +4.1% |
+| 7 | 238 | Tail | 63.8% | **64.1%** | DIST +0.3% |
+| 8 | 154 | Tail | 62.3% | **79.2%** | DIST +16.9% |
+| 9 | 100 | Tail | 54.1% | **70.7%** | DIST +16.6% |
+
+### Confusion Matrix Insights
+Visualizing the confusion matrices for both tokens provides the "smoking gun" for the Adaptive Token Fusion (ATF) hypothesis:
+- **CLS Token (Head Expert):** Highly saturated along the diagonal for Head classes (0, 1, 2). However, it bleeds heavily in the bottom rows, frequently misclassifying Tail samples as Head classes (e.g., heavily mispredicting Class 8 and 9 samples as Class 1).
+- **DIST Token (Tail Expert):** Maintains much stronger diagonal saturation in the bottom right (Classes 6, 7, 8, 9). For instance, it correctly predicted 792 instances of Class 8, compared to the CLS token's 623.
 
 **Conclusion:** The baseline averages these tokens (50/50). This actively drags down the Head classes (because DIST struggles there) and actively drags down the Tail classes (because CLS struggles there). This forms the theoretical justification for the **Adaptive Token Fusion (ATF)** experiment.
 
