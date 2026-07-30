@@ -15,9 +15,27 @@ This folder contains a fully self-contained Kaggle Notebook designed to reproduc
 
 | Model Variation | Epochs | Params | IF | Hardware | Test Accuracy |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (DeiT-Tiny)** | 300 | 5M | 50 | 2x T4 (Kaggle) | **72.48%** |
+| **Baseline (DeiT-Tiny)** | 300 | 5M | 50 | 2x T4 (Kaggle) | **72.20%** |
 
-*Note: The baseline clearly exhibits the intended DRW behavior, dropping training loss massively at Epoch 270 (0.9 * 300) when mixup is disabled and tail re-weighting activates.*
+*Note: The baseline clearly exhibits the intended DRW behavior, dropping training loss massively at Epoch 280 when mixup is disabled and tail re-weighting activates.*
+
+### Detailed Final Metrics (Epoch 300)
+The tracking loop extracted the precise per-class accuracy of both the **CLS Token** and the **DIST Token** on the final epoch. The results perfectly validate our core hypothesis:
+
+| Class | Count | Group | CLS Acc | DIST Acc | Delta |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 0 | 5000 | Head | **93.2%** | 89.3% | CLS +3.9% |
+| 1 | 3237 | Head | **95.9%** | 92.7% | CLS +3.2% |
+| 2 | 2096 | Head | **76.9%** | 72.4% | CLS +4.5% |
+| 3 | 1357 | Head | **69.0%** | 60.2% | CLS +8.8% |
+| 4 | 878 | Med | **69.1%** | 68.8% | CLS +0.3% |
+| 5 | 568 | Med | 53.2% | **64.3%** | DIST +11.1% |
+| 6 | 368 | Med | 67.8% | **72.4%** | DIST +4.6% |
+| 7 | 238 | Tail | 59.6% | **68.2%** | DIST +8.6% |
+| 8 | 154 | Tail | 53.5% | **76.3%** | DIST +22.8% |
+| 9 | 100 | Tail | 47.3% | **72.2%** | DIST +24.9% |
+
+**Conclusion:** The baseline averages these tokens (50/50). This actively drags down the Head classes (because DIST struggles there) and actively drags down the Tail classes (because CLS struggles there). This forms the theoretical justification for the **Adaptive Token Fusion (ATF)** experiment.
 
 ### Purpose
 The goal of this notebook is to provide a "researcher's sandbox" for fast iteration. Instead of dealing with the heavily abstracted multi-file architecture of the official repository, this notebook extracts the essential components into 5 clean, linear cells. This allows you to immediately see how the mathematical improvements (ablations) affect the loss curves and accuracy, without fighting with the codebase structure.
