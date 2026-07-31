@@ -8,7 +8,7 @@ This document tracks the execution and results of the 5-phase ablation roadmap d
 
 ### Experiment 1.1: Extreme Imbalance (IF100)
 **Configuration:**
-* Dataset: CIFAR-100-LT
+* Dataset: CIFAR-10-LT
 * Imbalance Factor: 0.01 (IF100)
 * Seed: 42
 * Backbone: DeiT-Tiny

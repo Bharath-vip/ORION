@@ -94,7 +94,7 @@ The Neural Router, having no prior knowledge of class frequency, discovered this
 We started by identifying a fixed 50/50 average heuristic in a CVPR paper. We observed that the tokens possess specialized expertise, and we successfully built multi-parameter Logit-Space architectures to dynamically route predictions. Ultimately, our Neural Entropy Router demonstrated that the distilled `DIST` token is structurally superior to the `CLS` token in this evaluated setting, and that dynamic instance-level routing can successfully unleash its potential by overriding the rigid heuristic.
 
 ## 11. Roadmap for Validation (Next Steps)
-While our empirical results on CIFAR-100-LT (IF50) with DeiT-Tiny strongly support the efficacy of dynamic entropy-based routing and the dominance of the DIST token, these findings must be validated across diverse configurations before claiming universality. Our next phase of research will execute the following ablations:
+While our empirical results on CIFAR-10-LT (IF50) with DeiT-Tiny strongly support the efficacy of dynamic entropy-based routing and the dominance of the DIST token, these findings must be validated across diverse configurations before claiming universality. Our next phase of research will execute the following ablations:
 1. **Random Seeds:** Verify if DIST supremacy is consistent across multiple initializations.
 2. **Imbalance Factors:** Evaluate on IF10, IF50, and IF100.
 3. **Scale & Datasets:** Port the baseline to ImageNet-LT and iNaturalist.
