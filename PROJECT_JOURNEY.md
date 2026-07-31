@@ -3,7 +3,7 @@
 ## 1. The Genesis: Auditing a CVPR 2024 Finalist
 Our journey began by delving into the research from Prof. R. Venkatesh Babu's Vision and AI Lab (VAL) at IISc. We specifically targeted the CVPR 2024 paper: **"DeiT-LT: Distillation Strikes Back for Vision Transformer Training on Long-Tailed Datasets"**. 
 
-DeiT-LT made a brilliant leap: it used Knowledge Distillation and a specialized DIST token to force a Vision Transformer to learn Tail classes, overcoming ViT's notorious hunger for balanced data. However, during our architectural audit, we discovered a fatal flaw in the inference phase: the paper arbitrarily forced a rigid **50/50 average** between the CLS token and the DIST token.
+DeiT-LT made a brilliant leap: it used Knowledge Distillation and a specialized DIST token to force a Vision Transformer to learn Tail classes, overcoming ViT's notorious hunger for balanced data. However, during our architectural audit, we identified a potentially suboptimal heuristic in the inference phase: the paper forced a fixed **50/50 average** between the CLS token and the DIST token.
 
 ## 2. The Hypothesis: The Expert Sabotage
 We hypothesized that the CLS token and DIST token were highly specialized experts. By forcing a 50/50 average, the original authors were actively sabotaging their own model:
@@ -21,7 +21,7 @@ Our baseline reproduction achieved **73.10% accuracy** (surpassing the paper's c
 * **CLS Confusion Matrix (Blue):** Showed intense diagonal saturation in the top-left (Head classes 0, 1, 2) but bled heavily across Tail classes.
 * **DIST Confusion Matrix (Green):** Showed intense diagonal saturation in the bottom-right (Tail classes 7, 8, 9).
 
-The baseline perfectly proved that the tokens had bifurcated into two mutually exclusive experts. 
+The baseline empirical results strongly suggested that the tokens had bifurcated into two mutually exclusive experts. 
 
 ## 5. The First ATF Experiment (The Oracle)
 To fix the 50/50 flaw, we introduced **Adaptive Token Fusion (ATF)** in `17_ATF_Experiment`. The goal was to dynamically route the logits based on the class sample frequency using a learned fusion weight $\alpha$.
@@ -55,7 +55,7 @@ To prove whether this failure was a universal mathematical limitation of the fus
 
 **The Result:** Both advanced optimizers broke out of the local minimum and independently converged on the **exact same curve**, learning `w1 ≈ +0.61`. 
 
-This was a monumental scientific victory! A positive $w_1$ perfectly maps to the Oracle: Head classes (high frequency) get a high $\alpha$ (relying on `[CLS]`), and Tail classes get a low $\alpha$ (relying on `[DIST]`). By testing multiple optimizers, we proved that our core hypothesis was mathematically sound and saved the paper from a severe optimization artifact.
+This was a significant empirical observation. A positive $w_1$ maps to the Oracle: Head classes (high frequency) get a high $\alpha$ (relying on `[CLS]`), and Tail classes get a low $\alpha$ (relying on `[DIST]`). By testing multiple optimizers, we demonstrated that our core hypothesis was mathematically sound under this configuration, isolating the previous negative slope as an optimization artifact.
 
 ## 9. The Oracle Gap and DIST Entropy
 While Adam and DE found the correct curve shape, there still remained a 1.6% accuracy gap between the 5-parameter model (72.73%) and the absolute upper bound established by the Oracle (74.40%). 
@@ -80,17 +80,25 @@ But the true revelation came from inspecting *how* the MLP routed the tokens.
 
 The Neural Router completely ignored the Oracle's step-function! Instead, it chose to route almost *everything* ($\alpha \approx 0.05$) to the `DIST` token. 
 
-**The DIST Token is a Universal Expert**
+**The DIST Token Dominates in this Setting**
 By inspecting the raw Epoch 300 metrics, the reason became obvious:
 * `CLS` Token Accuracy: 69.2%
 * `DIST` Token Accuracy: **73.8%**
 * `AVG` (50/50) Accuracy: 72.1%
 
-The Knowledge Distillation process did not just make the `DIST` token a "Tail Expert"—it made it a **Universal Expert** that fundamentally outperformed the `CLS` token globally. The original CVPR paper's rigid 50/50 average was actually dragging the powerful `DIST` token down by forcing it to average with the weaker `CLS` token! 
+The Knowledge Distillation process in this specific configuration did not just make the `DIST` token a "Tail Expert"—it made it a **Dominant Expert** that consistently outperformed the `CLS` token globally. The original paper's fixed 50/50 average was actually dragging the powerful `DIST` token down by forcing it to average with the weaker `CLS` token. 
 
-The Neural Router, having no prior knowledge of class frequency, organically discovered this structural superiority via Entropy/Confidence analysis and correctly delegated almost all authority to the `DIST` token, achieving a massive `+1.63%` absolute boost over the baseline.
+The Neural Router, having no prior knowledge of class frequency, discovered this structural superiority via Entropy/Confidence analysis and delegated almost all authority to the `DIST` token, achieving a `+1.63%` absolute boost over the baseline.
 
 ## Conclusion
-We started by identifying a crude 50/50 average in a CVPR paper. We ended by empirically proving that the tokens possess mutually exclusive expertise, and we successfully built multi-parameter Logit-Space architectures to dynamically route predictions. Ultimately, our Neural Entropy Router proved that the distilled `DIST` token is structurally superior to the `CLS` token, and that dynamic instance-level routing can successfully unleash its full potential by overriding the rigid 50/50 heuristic.
+We started by identifying a fixed 50/50 average heuristic in a CVPR paper. We observed that the tokens possess specialized expertise, and we successfully built multi-parameter Logit-Space architectures to dynamically route predictions. Ultimately, our Neural Entropy Router demonstrated that the distilled `DIST` token is structurally superior to the `CLS` token in this evaluated setting, and that dynamic instance-level routing can successfully unleash its potential by overriding the rigid heuristic.
 
-This concludes the DeiT-LT Adaptive Token Fusion project.
+## 11. Roadmap for Validation (Next Steps)
+While our empirical results on CIFAR-100-LT (IF50) with DeiT-Tiny strongly support the efficacy of dynamic entropy-based routing and the dominance of the DIST token, these findings must be validated across diverse configurations before claiming universality. Our next phase of research will execute the following ablations:
+1. **Random Seeds:** Verify if DIST supremacy is consistent across multiple initializations.
+2. **Imbalance Factors:** Evaluate on IF10, IF50, and IF100.
+3. **Scale & Datasets:** Port the baseline to ImageNet-LT and iNaturalist.
+4. **Architectures:** Evaluate across DeiT-Tiny, Small, and Base.
+5. **Teacher Variants:** Assess if DIST dominance persists when distilled from CNNs, MAE, or DINO.
+
+This concludes the initial DeiT-LT Adaptive Token Fusion exploration phase.
