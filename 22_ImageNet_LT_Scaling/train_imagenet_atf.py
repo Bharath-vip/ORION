@@ -110,9 +110,9 @@ class EntropyRouter(nn.Module):
 # ==========================================
 def main():
     parser = argparse.ArgumentParser(description="ImageNet-LT DeiT Scaling & ATF Pipeline")
-    parser.add_argument('--data-path', type=str, required=True, help="Path to ImageNet data (e.g. /kaggle/input/imagenet/ILSVRC/Data/CLS-LOC/)")
-    parser.add_argument('--train-txt', type=str, required=True, help="Path to ImageNet_LT_train.txt")
-    parser.add_argument('--val-txt', type=str, required=True, help="Path to ImageNet_LT_val.txt")
+    parser.add_argument('--data-path', type=str, default='/kaggle/input/imagenet/ILSVRC/Data/CLS-LOC/', help="Path to ImageNet data")
+    parser.add_argument('--train-txt', type=str, default='ImageNet_LT_train.txt', help="Path to ImageNet_LT_train.txt")
+    parser.add_argument('--val-txt', type=str, default='ImageNet_LT_val.txt', help="Path to ImageNet_LT_val.txt")
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--epochs', type=int, default=90)
     parser.add_argument('--lr', type=float, default=1e-3)
