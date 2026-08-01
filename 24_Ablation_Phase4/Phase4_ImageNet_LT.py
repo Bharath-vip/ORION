@@ -18,7 +18,7 @@ import timm
 # 1. Argument Parser
 # ==========================================
 parser = argparse.ArgumentParser(description="Phase 4: ImageNet-LT Neural Entropy Router Ablation")
-parser.add_argument("--data_dir", type=str, required=True, help="Path to ImageNet-LT directory (e.g., /kaggle/input/imagenetlt/ImageNet-LT)")
+parser.add_argument("--data_dir", type=str, default="/kaggle/input/competitions/imagenet-object-localization-challenge/ILSVRC/Data/CLS-LOC", help="Path to ImageNet-LT directory")
 parser.add_argument("--model_type", type=str, default="deit_tiny_patch16_224", help="Timm ViT model string")
 parser.add_argument("--epochs", type=int, default=300, help="Total training epochs")
 parser.add_argument("--drw_epoch", type=int, default=250, help="Epoch to start Deferred Reweighting")
@@ -30,7 +30,7 @@ parser.add_argument("--seed", type=int, default=42, help="Random seed")
 import sys
 if 'ipykernel' in sys.modules:
     print("Detected Jupyter/Kaggle environment. Using default notebook arguments.")
-    args = parser.parse_args(args=["--data_dir", "/kaggle/input/imagenetlt/ImageNet-LT"])
+    args = parser.parse_args(args=["--data_dir", "/kaggle/input/competitions/imagenet-object-localization-challenge/ILSVRC/Data/CLS-LOC"])
 else:
     args = parser.parse_args()
 
