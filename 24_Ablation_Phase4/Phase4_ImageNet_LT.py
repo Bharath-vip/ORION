@@ -27,7 +27,12 @@ parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
 parser.add_argument("--weight_decay", type=float, default=0.05, help="Weight decay")
 parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
-args = parser.parse_args()
+import sys
+if 'ipykernel' in sys.modules:
+    print("Detected Jupyter/Kaggle environment. Using default notebook arguments.")
+    args = parser.parse_args(args=["--data_dir", "/kaggle/input/imagenetlt/ImageNet-LT"])
+else:
+    args = parser.parse_args()
 
 # Reproducibility
 torch.manual_seed(args.seed)
