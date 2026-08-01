@@ -23,8 +23,8 @@ parser.add_argument("--model_type", type=str, default="deit_tiny_patch16_224", h
 parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_latest.pth")
 parser.add_argument("--epochs", type=int, default=300, help="Total training epochs")
 parser.add_argument("--drw_epoch", type=int, default=250, help="Epoch to start Deferred Reweighting")
-parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
-parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
+parser.add_argument("--lr", type=float, default=2e-3, help="Learning rate")
 parser.add_argument("--weight_decay", type=float, default=0.05, help="Weight decay")
 parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
