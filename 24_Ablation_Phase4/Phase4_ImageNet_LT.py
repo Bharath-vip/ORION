@@ -42,7 +42,50 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ==========================================
 # 2. Dataloaders & ImageNet-LT Statistics
 # ==========================================
-print(f"Loading ImageNet-LT from: {args.data_dir}")
+print(f"Mounting official Kaggle ImageNet dataset from: {args.data_dir}")
+
+import urllib.request
+from PIL import Image
+from torch.utils.data import Dataset
+
+# Download Official ImageNet-LT splits if they don't exist
+train_txt = "ImageNet_LT_train.txt"
+test_txt = "ImageNet_LT_test.txt"
+
+if not os.path.exists(train_txt):
+    print("Downloading ImageNet_LT_train.txt...")
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/zhmiao/OpenLongTailRecognition-OLTR/master/data/ImageNet_LT/ImageNet_LT_train.txt", train_txt)
+if not os.path.exists(test_txt):
+    print("Downloading ImageNet_LT_test.txt...")
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/zhmiao/OpenLongTailRecognition-OLTR/master/data/ImageNet_LT/ImageNet_LT_test.txt", test_txt)
+
+class LT_Dataset(Dataset):
+    def __init__(self, root, txt, transform=None):
+        self.img_path = []
+        self.labels = []
+        self.transform = transform
+        with open(txt) as f:
+            for line in f:
+                self.img_path.append(os.path.join(root, line.split()[0]))
+                self.labels.append(int(line.split()[1]))
+                
+    def __len__(self):
+        return len(self.labels)
+        
+    def __getitem__(self, index):
+        path = self.img_path[index]
+        label = self.labels[index]
+        try:
+            with open(path, 'rb') as f:
+                sample = Image.open(f).convert('RGB')
+        except Exception as e:
+            # Fallback if specific file is corrupted/missing in Kaggle split
+            print(f"Error loading {path}: {e}")
+            sample = Image.new('RGB', (224, 224))
+            
+        if self.transform is not None:
+            sample = self.transform(sample)
+        return sample, label
 
 transform_train = transforms.Compose([
     transforms.RandomResizedCrop(224),
@@ -58,14 +101,14 @@ transform_test = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-train_dataset = datasets.ImageFolder(root=os.path.join(args.data_dir, 'train'), transform=transform_train)
-test_dataset = datasets.ImageFolder(root=os.path.join(args.data_dir, 'test'), transform=transform_test)
+train_dataset = LT_Dataset(root=args.data_dir, txt=train_txt, transform=transform_train)
+test_dataset = LT_Dataset(root=args.data_dir, txt=test_txt, transform=transform_test)
 
 train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
 print("Counting class frequencies to define Head, Medium, Tail boundaries...")
-class_counts_dict = Counter([target for _, target in train_dataset.samples])
+class_counts_dict = Counter(train_dataset.labels)
 class_counts = [class_counts_dict.get(i, 0) for i in range(1000)]
 
 # ImageNet-LT thresholds
