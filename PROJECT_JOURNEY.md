@@ -117,9 +117,23 @@ Despite the overall accuracy drop, the structural dynamics remained mathematical
 **3. Flawless Router Consistency:**
 For the second and third time, the Neural Router organically detected the structural weakness of the `CLS` token, ignored the static 50/50 heuristic, and routed almost all inference ($\alpha \approx 0.01 - 0.05$) to the `DIST` token.
 
-## 13. Roadmap for Validation (Next Steps)
-With Phase 2 complete, we have proven the robustness of our theory against statistical variance, dataset severity, and architectural scale. Our next phase of research will execute the remaining ablations:
-1. **Teacher Variants (Phase 3):** Assess if DIST dominance persists when distilled from Self-Supervised models (MAE, DINO).
-2. **Massive Datasets (Phase 4):** Port the baseline to ImageNet-LT and iNaturalist.
+## 13. Phase 4: Massive Scale (ImageNet-LT)
+To truly validate the universality of the Neural Entropy Router, we abandoned Phase 3 (Teacher Dynamics) in favor of immediately porting our architecture to the gold-standard benchmark for Long-Tailed Recognition: **ImageNet-LT** (1,000 classes, 115,000 images).
 
-This concludes the Phase 2 Ablation of the DeiT-LT Adaptive Token Fusion project.
+Because Jupyter Notebooks are prone to scoping bugs on massive loops, we transitioned from messy notebook generation to building a professional, monolithic PyTorch execution script (`Phase4_ImageNet_LT.py`).
+
+**1. Zero-Shot Routing Architecture:**
+Because our Neural Entropy Router relies purely on instance-level features (Confidence and Entropy) instead of raw logits, scaling from CIFAR-10 (10 classes) to ImageNet-LT (1000 classes) required **zero architectural changes** to the MLP.
+
+**2. Kaggle-Native Dataset Loading:**
+Instead of downloading 150GB of ImageNet to a 20GB Kaggle workspace, we engineered a custom `LT_Dataset` class that automatically downloads the tiny `.txt` splits from Facebook Research and dynamically maps them to the official `imagenet-object-localization-challenge` directory natively hosted by Kaggle.
+
+**3. Cluster Survival & Checkpointing:**
+ImageNet-LT training requires ~45 hours on 2x T4 GPUs. Because Kaggle forcefully terminates sessions after 12 hours, we injected continuous checkpointing (`--resume`, optimizer states, scheduler states) and CSV logging, allowing the training to survive in 12-hour chunks. This run is currently baking.
+
+## 14. Phase 5: CIFAR-100-LT Architecture Scaling
+While ImageNet-LT trains, we launched an extreme stress-test. CIFAR-100 contains the same number of images as CIFAR-10 (50,000), but with 10x the classes. Applying an Imbalance Factor of 50 to CIFAR-100 drops the tail classes to a brutal **10 images per class**.
+
+We engineered a secondary monolithic script (`Phase5_CIFAR100_LT.py`) to sequentially blast this dataset across all three architectures (`deit_tiny`, `deit_small`, `deit_base`) using a massive batch size (1024) across the 2x T4 GPUs. 
+
+This concludes the current status of the DeiT-LT Adaptive Token Fusion project. Awaiting results from Phase 4 and Phase 5 executions.
