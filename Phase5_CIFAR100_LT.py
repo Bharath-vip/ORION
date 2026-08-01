@@ -18,6 +18,7 @@ import timm
 parser = argparse.ArgumentParser(description="Phase 5: CIFAR-100-LT Architecture Scale Ablation")
 parser.add_argument("--data_dir", type=str, default="./data", help="Path to download CIFAR-100")
 parser.add_argument("--epochs", type=int, default=100, help="Total training epochs per model")
+parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_phase5.pth")
 parser.add_argument("--drw_epoch", type=int, default=80, help="Epoch to start Deferred Reweighting")
 parser.add_argument("--batch_size", type=int, default=1024, help="Batch size (High for 2x T4 GPUs)")
 parser.add_argument("--lr", type=float, default=2e-3, help="Learning rate")
@@ -195,7 +196,19 @@ for arch in architectures:
     all_test_logits_cls = []
     all_test_logits_dist = []
     
-    for epoch in range(args.epochs):
+    start_epoch = 0
+    checkpoint_path = f"checkpoint_phase5_{arch}.pth"
+    if args.resume and os.path.exists(checkpoint_path):
+        print(f"Resuming {arch} from {checkpoint_path}...")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scaler.load_state_dict(checkpoint['scaler'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Resumed successfully at Epoch {start_epoch+1}")
+        
+    for epoch in range(start_epoch, args.epochs):
         epoch_start_time = time.time()
         model.train()
         total_loss = 0
@@ -278,6 +291,15 @@ for arch in architectures:
             t_acc = (tail_correct / tail_total * 100) if tail_total > 0 else 0
             
             print(f"Ep {epoch+1:03d} [{epoch_time:.1f}s] | Acc:[CLS:{cls_acc:.1f} DIST:{dist_acc:.1f} AVG:{avg_acc:.1f}] | HMT:[H:{h_acc:.1f} M:{m_acc:.1f} T:{t_acc:.1f}]")
+
+        # Save checkpoint
+        torch.save({
+            'epoch': epoch,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scaler': scaler.state_dict(),
+            'scheduler': scheduler.state_dict(),
+        }, checkpoint_path)
 
     # Train Neural Router
     print(f"\nTraining Neural Router for {arch}...")
