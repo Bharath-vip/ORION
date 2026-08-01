@@ -20,6 +20,7 @@ import timm
 parser = argparse.ArgumentParser(description="Phase 4: ImageNet-LT Neural Entropy Router Ablation")
 parser.add_argument("--data_dir", type=str, default="/kaggle/input/competitions/imagenet-object-localization-challenge/ILSVRC/Data/CLS-LOC", help="Path to ImageNet-LT directory")
 parser.add_argument("--model_type", type=str, default="deit_tiny_patch16_224", help="Timm ViT model string")
+parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_latest.pth")
 parser.add_argument("--epochs", type=int, default=300, help="Total training epochs")
 parser.add_argument("--drw_epoch", type=int, default=250, help="Epoch to start Deferred Reweighting")
 parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
@@ -200,8 +201,21 @@ def mixup_fn(images, targets, alpha=0.8):
 # ==========================================
 # 5. Training Loop
 # ==========================================
+start_epoch = 0
+checkpoint_path = "checkpoint_latest.pth"
+
+if args.resume and os.path.exists(checkpoint_path):
+    print(f"Resuming from {checkpoint_path}...")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    scaler.load_state_dict(checkpoint['scaler'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    start_epoch = checkpoint['epoch'] + 1
+    print(f"Resumed successfully at Epoch {start_epoch+1}")
+
 print("\n" + "="*50)
-print("STARTING TRAINING (300 EPOCHS)")
+print(f"STARTING TRAINING (EPOCH {start_epoch+1} TO {args.epochs})")
 print("="*50)
 
 # To store for the Oracle
@@ -213,7 +227,7 @@ all_test_logits_dist = []
 all_test_feat_cls = []
 all_test_feat_dist = []
 
-for epoch in range(args.epochs):
+for epoch in range(start_epoch, args.epochs):
     epoch_start_time = time.time()
     model.train()
     total_loss = 0
@@ -320,6 +334,22 @@ for epoch in range(args.epochs):
         t_acc = (tail_correct / tail_total * 100) if tail_total > 0 else 0
         
         print(f"Ep {epoch+1:03d} [{epoch_time:.1f}s] | L:{total_loss/len(train_loader):.3f} LR:{current_lr:.1e} | Acc:[CLS:{cls_acc:.1f} DIST:{dist_acc:.1f} AVG:{avg_acc:.1f}] | HMT:[H:{h_acc:.1f} M:{m_acc:.1f} T:{t_acc:.1f}]")
+        
+        csv_path = "metrics_imagenet.csv"
+        file_exists = os.path.isfile(csv_path)
+        with open(csv_path, "a") as f:
+            if not file_exists or os.path.getsize(csv_path) == 0:
+                f.write("Epoch,Loss,LR,CLS_Acc,DIST_Acc,AVG_Acc,Head_Acc,Med_Acc,Tail_Acc\n")
+            f.write(f"{epoch+1},{total_loss/len(train_loader):.4f},{current_lr:.2e},{cls_acc:.2f},{dist_acc:.2f},{avg_acc:.2f},{h_acc:.2f},{m_acc:.2f},{t_acc:.2f}\n")
+            
+    # Save checkpoint at the end of every epoch
+    torch.save({
+        'epoch': epoch,
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scaler': scaler.state_dict(),
+        'scheduler': scheduler.state_dict(),
+    }, checkpoint_path)
 
 # ==========================================
 # 6. Post-Training: Oracle Alpha Search
