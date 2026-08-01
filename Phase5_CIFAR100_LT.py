@@ -17,6 +17,7 @@ import timm
 # ==========================================
 parser = argparse.ArgumentParser(description="Phase 5: CIFAR-100-LT Architecture Scale Ablation")
 parser.add_argument("--data_dir", type=str, default="./data", help="Path to download CIFAR-100")
+parser.add_argument("--model", type=str, default="deit_tiny_patch16_224", help="Architecture to run")
 parser.add_argument("--epochs", type=int, default=100, help="Total training epochs per model")
 parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_phase5.pth")
 parser.add_argument("--drw_epoch", type=int, default=80, help="Epoch to start Deferred Reweighting")
@@ -163,208 +164,207 @@ class NeuralRouter(nn.Module):
         return self.mlp(x)
 
 # ==========================================
-# 4. Master Ablation Loop
+# 4. Master Ablation Execution
 # ==========================================
-architectures = ['deit_tiny_patch16_224', 'deit_small_patch16_224', 'deit_base_patch16_224']
+arch = args.model
 results = []
 
-for arch in architectures:
-    print("\n" + "="*60)
-    print(f"STARTING ABLATION: {arch}")
-    print("="*60)
+print("\n" + "="*60)
+print(f"STARTING ABLATION: {arch}")
+print("="*60)
+
+# Init Models
+model = DeiTLT(arch, num_classes=100).to(device)
+if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model)
     
-    # Init Models
-    model = DeiTLT(arch, num_classes=100).to(device)
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
+teacher_name = 'resnext50_32x4d' if arch != 'deit_base_patch16_224' else 'resnet101'
+print(f"Loading Teacher: {teacher_name}")
+teacher = timm.create_model(teacher_name, pretrained=True, num_classes=1000)
+teacher.fc = nn.Linear(teacher.fc.in_features, 100) # Re-head for CIFAR-100
+teacher = teacher.to(device)
+if torch.cuda.device_count() > 1:
+    teacher = nn.DataParallel(teacher)
+teacher.eval()
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+scaler = torch.amp.GradScaler('cuda')
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+
+# Training Loop
+all_test_lbls = []
+all_test_logits_cls = []
+all_test_logits_dist = []
+
+start_epoch = 0
+checkpoint_path = f"checkpoint_phase5_{arch}.pth"
+if args.resume and os.path.exists(checkpoint_path):
+    print(f"Resuming {arch} from {checkpoint_path}...")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    scaler.load_state_dict(checkpoint['scaler'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    start_epoch = checkpoint['epoch'] + 1
+    print(f"Resumed successfully at Epoch {start_epoch+1}")
+    
+for epoch in range(start_epoch, args.epochs):
+    epoch_start_time = time.time()
+    model.train()
+    total_loss = 0
+    use_drw = epoch >= args.drw_epoch
+    weight = 2.0 if use_drw else 1.0
+    
+    for images, targets in train_loader:
+        images, targets = images.to(device), targets.to(device)
         
-    teacher_name = 'resnext50_32x4d' if arch != 'deit_base_patch16_224' else 'resnet101'
-    print(f"Loading Teacher: {teacher_name}")
-    teacher = timm.create_model(teacher_name, pretrained=True, num_classes=1000)
-    teacher.fc = nn.Linear(teacher.fc.in_features, 100) # Re-head for CIFAR-100
-    teacher = teacher.to(device)
-    if torch.cuda.device_count() > 1:
-        teacher = nn.DataParallel(teacher)
-    teacher.eval()
-    
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scaler = torch.amp.GradScaler('cuda')
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-    
-    # Training Loop
-    all_test_lbls = []
-    all_test_logits_cls = []
-    all_test_logits_dist = []
-    
-    start_epoch = 0
-    checkpoint_path = f"checkpoint_phase5_{arch}.pth"
-    if args.resume and os.path.exists(checkpoint_path):
-        print(f"Resuming {arch} from {checkpoint_path}...")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint['model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scaler.load_state_dict(checkpoint['scaler'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Resumed successfully at Epoch {start_epoch+1}")
-        
-    for epoch in range(start_epoch, args.epochs):
-        epoch_start_time = time.time()
-        model.train()
-        total_loss = 0
-        use_drw = epoch >= args.drw_epoch
-        weight = 2.0 if use_drw else 1.0
-        
-        for images, targets in train_loader:
-            images, targets = images.to(device), targets.to(device)
+        if not use_drw:
+            images, targets = mixup_fn(images, targets)
+        else:
+            targets = F.one_hot(targets, num_classes=100).float()
             
-            if not use_drw:
-                images, targets = mixup_fn(images, targets)
-            else:
-                targets = F.one_hot(targets, num_classes=100).float()
-                
-            with torch.amp.autocast('cuda'):
-                with torch.no_grad():
-                    teacher_logits = teacher(images)
-                
-                logits_cls, logits_dist = model(images)
-                
-                if use_drw:
-                    loss_cls = F.cross_entropy(logits_cls, targets.argmax(dim=1), weight=per_cls_weights)
-                else:
-                    loss_cls = base_criterion(logits_cls, targets)
-                    
-                t_targets = teacher_logits.argmax(dim=1)
-                loss_dist = F.cross_entropy(logits_dist, t_targets)
-                loss = loss_cls + (weight * loss_dist)
-                
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            total_loss += loss.item()
-            
-        current_lr = scheduler.get_last_lr()[0]
-        scheduler.step()
-        epoch_time = time.time() - epoch_start_time
-        
-        if (epoch + 1) % 10 == 0 or (epoch + 1) == args.epochs:
-            model.eval()
-            cls_correct, dist_correct, avg_correct = 0, 0, 0
-            head_correct, med_correct, tail_correct = 0, 0, 0
-            head_total, med_total, tail_total = 0, 0, 0
-            total = 0
-            is_last_epoch = (epoch + 1) == args.epochs
-            
+        with torch.amp.autocast('cuda'):
             with torch.no_grad():
-                for imgs, lbls in test_loader:
-                    imgs, lbls = imgs.to(device), lbls.to(device)
-                    l_cls, l_dist, _, _ = model(imgs, return_features=True)
-                    l_avg = (l_cls + l_dist) / 2
-                    
-                    p_cls, p_dist, p_avg = l_cls.argmax(dim=1), l_dist.argmax(dim=1), l_avg.argmax(dim=1)
-                    
-                    if is_last_epoch:
-                        all_test_lbls.append(lbls.cpu())
-                        all_test_logits_cls.append(l_cls.cpu())
-                        all_test_logits_dist.append(l_dist.cpu())
-                    
-                    cls_correct += (p_cls == lbls).sum().item()
-                    dist_correct += (p_dist == lbls).sum().item()
-                    avg_correct += (p_avg == lbls).sum().item()
-                    
-                    for c_idx in range(100):
-                        mask = (lbls == c_idx)
-                        n_c = mask.sum().item()
-                        c_correct = (p_avg[mask] == c_idx).sum().item()
-                        
-                        if c_idx in head_classes: head_total += n_c; head_correct += c_correct
-                        elif c_idx in med_classes: med_total += n_c; med_correct += c_correct
-                        elif c_idx in tail_classes: tail_total += n_c; tail_correct += c_correct
-                    total += lbls.size(0)
-                    
-            cls_acc = cls_correct / total * 100
-            dist_acc = dist_correct / total * 100
-            avg_acc = avg_correct / total * 100
-            h_acc = (head_correct / head_total * 100) if head_total > 0 else 0
-            m_acc = (med_correct / med_total * 100) if med_total > 0 else 0
-            t_acc = (tail_correct / tail_total * 100) if tail_total > 0 else 0
+                teacher_logits = teacher(images)
             
-            print(f"Ep {epoch+1:03d} [{epoch_time:.1f}s] | Acc:[CLS:{cls_acc:.1f} DIST:{dist_acc:.1f} AVG:{avg_acc:.1f}] | HMT:[H:{h_acc:.1f} M:{m_acc:.1f} T:{t_acc:.1f}]")
-
-        # Save checkpoint
-        torch.save({
-            'epoch': epoch,
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'scaler': scaler.state_dict(),
-            'scheduler': scheduler.state_dict(),
-        }, checkpoint_path)
-
-    # Train Neural Router
-    print(f"\nTraining Neural Router for {arch}...")
-    Y_labels = torch.cat(all_test_lbls)
-    L_c = torch.cat(all_test_logits_cls)
-    L_d = torch.cat(all_test_logits_dist)
-    
-    p_cls, p_dist = F.softmax(L_c, dim=1), F.softmax(L_d, dim=1)
-    conf_cls, conf_dist = p_cls.max(dim=1)[0].unsqueeze(1), p_dist.max(dim=1)[0].unsqueeze(1)
-    ent_cls = -(p_cls * torch.log(p_cls + 1e-8)).sum(dim=1, keepdim=True)
-    ent_dist = -(p_dist * torch.log(p_dist + 1e-8)).sum(dim=1, keepdim=True)
-    
-    X_features = torch.cat([conf_cls, conf_dist, ent_cls, ent_dist], dim=1)
-    
-    router = NeuralRouter().to(device)
-    r_optimizer = torch.optim.Adam(router.parameters(), lr=0.01)
-    X_train, Y_train = X_features.to(device), Y_labels.to(device)
-    L_c_d, L_d_d = L_c.to(device), L_d.to(device)
-    
-    for e in range(500):
-        router.train()
-        r_optimizer.zero_grad()
-        alphas = router(X_train)
-        fused = alphas * L_c_d + (1 - alphas) * L_d_d
-        loss = F.cross_entropy(fused, Y_train)
-        loss.backward()
-        r_optimizer.step()
+            logits_cls, logits_dist = model(images)
+            
+            if use_drw:
+                loss_cls = F.cross_entropy(logits_cls, targets.argmax(dim=1), weight=per_cls_weights)
+            else:
+                loss_cls = base_criterion(logits_cls, targets)
+                
+            t_targets = teacher_logits.argmax(dim=1)
+            loss_dist = F.cross_entropy(logits_dist, t_targets)
+            loss = loss_cls + (weight * loss_dist)
+            
+        optimizer.zero_grad()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        total_loss += loss.item()
         
-    router.eval()
-    with torch.no_grad():
-        alphas = router(X_train)
-        fused = alphas * L_c_d + (1 - alphas) * L_d_d
-        router_acc = (fused.argmax(dim=1) == Y_train).float().mean().item() * 100
+    current_lr = scheduler.get_last_lr()[0]
+    scheduler.step()
+    epoch_time = time.time() - epoch_start_time
+    
+    if (epoch + 1) % 10 == 0 or (epoch + 1) == args.epochs:
+        model.eval()
+        cls_correct, dist_correct, avg_correct = 0, 0, 0
+        head_correct, med_correct, tail_correct = 0, 0, 0
+        head_total, med_total, tail_total = 0, 0, 0
+        total = 0
+        is_last_epoch = (epoch + 1) == args.epochs
         
-    # Oracle Search
-    alphas_grid = np.linspace(0, 1, 21)
-    oracle_correct = 0
-    for c in range(100):
-        mask = (Y_labels == c)
-        if mask.sum() == 0: continue
-        best_acc, best_alpha = 0, 0.5
-        l_c_mask, l_d_mask = L_c[mask], L_d[mask]
-        for a in alphas_grid:
-            f = a * l_c_mask + (1 - a) * l_d_mask
-            acc = (f.argmax(dim=1) == c).float().mean().item()
-            if acc > best_acc: best_acc, best_alpha = acc, a
-        for i in np.where(mask)[0]:
-            f = best_alpha * L_c[i] + (1 - best_alpha) * L_d[i]
-            if f.argmax() == c: oracle_correct += 1
-    oracle_acc = oracle_correct / len(Y_labels) * 100
+        with torch.no_grad():
+            for imgs, lbls in test_loader:
+                imgs, lbls = imgs.to(device), lbls.to(device)
+                l_cls, l_dist, _, _ = model(imgs, return_features=True)
+                l_avg = (l_cls + l_dist) / 2
+                
+                p_cls, p_dist, p_avg = l_cls.argmax(dim=1), l_dist.argmax(dim=1), l_avg.argmax(dim=1)
+                
+                if is_last_epoch:
+                    all_test_lbls.append(lbls.cpu())
+                    all_test_logits_cls.append(l_cls.cpu())
+                    all_test_logits_dist.append(l_dist.cpu())
+                
+                cls_correct += (p_cls == lbls).sum().item()
+                dist_correct += (p_dist == lbls).sum().item()
+                avg_correct += (p_avg == lbls).sum().item()
+                
+                for c_idx in range(100):
+                    mask = (lbls == c_idx)
+                    n_c = mask.sum().item()
+                    c_correct = (p_avg[mask] == c_idx).sum().item()
+                    
+                    if c_idx in head_classes: head_total += n_c; head_correct += c_correct
+                    elif c_idx in med_classes: med_total += n_c; med_correct += c_correct
+                    elif c_idx in tail_classes: tail_total += n_c; tail_correct += c_correct
+                total += lbls.size(0)
+                
+        cls_acc = cls_correct / total * 100
+        dist_acc = dist_correct / total * 100
+        avg_acc = avg_correct / total * 100
+        h_acc = (head_correct / head_total * 100) if head_total > 0 else 0
+        m_acc = (med_correct / med_total * 100) if med_total > 0 else 0
+        t_acc = (tail_correct / tail_total * 100) if tail_total > 0 else 0
+        
+        print(f"Ep {epoch+1:03d} [{epoch_time:.1f}s] | Acc:[CLS:{cls_acc:.1f} DIST:{dist_acc:.1f} AVG:{avg_acc:.1f}] | HMT:[H:{h_acc:.1f} M:{m_acc:.1f} T:{t_acc:.1f}]")
+
+    # Save checkpoint
+    torch.save({
+        'epoch': epoch,
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scaler': scaler.state_dict(),
+        'scheduler': scheduler.state_dict(),
+    }, checkpoint_path)
+
+# Train Neural Router
+print(f"\nTraining Neural Router for {arch}...")
+Y_labels = torch.cat(all_test_lbls)
+L_c = torch.cat(all_test_logits_cls)
+L_d = torch.cat(all_test_logits_dist)
+
+p_cls, p_dist = F.softmax(L_c, dim=1), F.softmax(L_d, dim=1)
+conf_cls, conf_dist = p_cls.max(dim=1)[0].unsqueeze(1), p_dist.max(dim=1)[0].unsqueeze(1)
+ent_cls = -(p_cls * torch.log(p_cls + 1e-8)).sum(dim=1, keepdim=True)
+ent_dist = -(p_dist * torch.log(p_dist + 1e-8)).sum(dim=1, keepdim=True)
+
+X_features = torch.cat([conf_cls, conf_dist, ent_cls, ent_dist], dim=1)
+
+router = NeuralRouter().to(device)
+r_optimizer = torch.optim.Adam(router.parameters(), lr=0.01)
+X_train, Y_train = X_features.to(device), Y_labels.to(device)
+L_c_d, L_d_d = L_c.to(device), L_d.to(device)
+
+for e in range(500):
+    router.train()
+    r_optimizer.zero_grad()
+    alphas = router(X_train)
+    fused = alphas * L_c_d + (1 - alphas) * L_d_d
+    loss = F.cross_entropy(fused, Y_train)
+    loss.backward()
+    r_optimizer.step()
     
-    print(f"\n[RESULT {arch}]")
-    print(f"50/50 Baseline: {avg_acc:.2f}%")
-    print(f"Oracle Bound:   {oracle_acc:.2f}%")
-    print(f"Neural Router:  {router_acc:.2f}%")
-    print("-"*40)
+router.eval()
+with torch.no_grad():
+    alphas = router(X_train)
+    fused = alphas * L_c_d + (1 - alphas) * L_d_d
+    router_acc = (fused.argmax(dim=1) == Y_train).float().mean().item() * 100
     
-    results.append({
-        'Model': arch,
-        'CLS_Acc': cls_acc,
-        'DIST_Acc': dist_acc,
-        'Baseline_5050': avg_acc,
-        'Router_Acc': router_acc,
-        'Oracle_Bound': oracle_acc
-    })
+# Oracle Search
+alphas_grid = np.linspace(0, 1, 21)
+oracle_correct = 0
+for c in range(100):
+    mask = (Y_labels == c)
+    if mask.sum() == 0: continue
+    best_acc, best_alpha = 0, 0.5
+    l_c_mask, l_d_mask = L_c[mask], L_d[mask]
+    for a in alphas_grid:
+        f = a * l_c_mask + (1 - a) * l_d_mask
+        acc = (f.argmax(dim=1) == c).float().mean().item()
+        if acc > best_acc: best_acc, best_alpha = acc, a
+    for i in np.where(mask)[0]:
+        f = best_alpha * L_c[i] + (1 - best_alpha) * L_d[i]
+        if f.argmax() == c: oracle_correct += 1
+oracle_acc = oracle_correct / len(Y_labels) * 100
+
+print(f"\n[RESULT {arch}]")
+print(f"50/50 Baseline: {avg_acc:.2f}%")
+print(f"Oracle Bound:   {oracle_acc:.2f}%")
+print(f"Neural Router:  {router_acc:.2f}%")
+print("-"*40)
+
+results.append({
+    'Model': arch,
+    'CLS_Acc': cls_acc,
+    'DIST_Acc': dist_acc,
+    'Baseline_5050': avg_acc,
+    'Router_Acc': router_acc,
+    'Oracle_Bound': oracle_acc
+})
 
 print("\n" + "="*50)
 print("PHASE 5 CIFAR-100-LT FINAL RESULTS")
