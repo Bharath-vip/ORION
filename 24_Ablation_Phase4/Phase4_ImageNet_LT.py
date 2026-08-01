@@ -39,6 +39,9 @@ else:
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    print(f"Detected {torch.cuda.device_count()} GPUs! Enabled CuDNN Benchmark for maximum speed.")
 
 # ==========================================
 # 2. Dataloaders & ImageNet-LT Statistics
