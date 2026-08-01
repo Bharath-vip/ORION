@@ -50,14 +50,14 @@ from torch.utils.data import Dataset
 
 # Download Official ImageNet-LT splits if they don't exist
 train_txt = "ImageNet_LT_train.txt"
-test_txt = "ImageNet_LT_test.txt"
+test_txt = "ImageNet_LT_val.txt"
 
 if not os.path.exists(train_txt):
     print("Downloading ImageNet_LT_train.txt...")
-    urllib.request.urlretrieve("https://raw.githubusercontent.com/zhmiao/OpenLongTailRecognition-OLTR/master/data/ImageNet_LT/ImageNet_LT_train.txt", train_txt)
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/facebookresearch/ic_gan/main/BigGAN_PyTorch/imagenet_lt/ImageNet_LT_train.txt", train_txt)
 if not os.path.exists(test_txt):
-    print("Downloading ImageNet_LT_test.txt...")
-    urllib.request.urlretrieve("https://raw.githubusercontent.com/zhmiao/OpenLongTailRecognition-OLTR/master/data/ImageNet_LT/ImageNet_LT_test.txt", test_txt)
+    print("Downloading ImageNet_LT_val.txt...")
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/facebookresearch/ic_gan/main/BigGAN_PyTorch/imagenet_lt/ImageNet_LT_val.txt", test_txt)
 
 class LT_Dataset(Dataset):
     def __init__(self, root, txt, transform=None):
